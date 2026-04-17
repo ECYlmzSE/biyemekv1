@@ -1,0 +1,82 @@
+name: ubereats_clone
+description: A food delivery app like UberEats built with Flutter
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.5
+  google_fonts: ^6.1.0
+  cached_network_image: ^3.3.0
+  shimmer: ^3.0.0
+
+  # Location
+  geolocator: ^10.1.0
+
+  # Maps & Places
+  google_maps_flutter: ^2.6.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  permission_handler: ^11.3.0
+
+  # Connectivity
+  connectivity_plus: ^5.0.1
+
+  # State Management
+  provider: ^6.1.1
+
+  # Storage
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.2
+
+  # Firebase
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.18.0
+  cloud_firestore: ^4.17.0
+
+  # Google Sign-In
+  google_sign_in: ^6.2.1
+
+  # HTTP
+  http: ^1.1.0
+
+  # Animation
+  lottie: ^3.1.0
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.3.3
+  timezone: ^0.9.4
+
+  # Notifications
+  flutter_local_notifications: ^17.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  web:
+    generate: false
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/categories/
+    - assets/icon/
+    - assets/lottie/
