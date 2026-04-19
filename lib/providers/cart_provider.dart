@@ -239,19 +239,41 @@ class CartProvider extends ChangeNotifier {
   }
 
   static const Map<String, double> _promoCodes = {
-    'BIYEMEK30': 30, 'HOSGELDIN': 20, 'YEMEK15': 15, 'INDIRIM25': 25,
+    'BIYEMEK30': 30, 'HOSGELDIN': 20, 'KAHVE15': 15, 'SOKAK25': 25,
   };
 
-  String? applyPromoCode(String code) {
+  // Belirli kategorilere özel kodlar
+  static const Map<String, String> _promoRestrictions = {
+    'KAHVE15': 'Kahve & İçecek',
+    'SOKAK25': 'Sokak Lezzetleri',
+  };
+
+  // Sadece ilk siparişte geçerli kodlar
+  static const Set<String> _firstOrderOnlyCodes = {'HOSGELDIN'};
+
+  /// [pastOrderCount] kullanıcının geçmişteki tamamlanmış/iptal sipariş sayısı.
+  String? applyPromoCode(String code, {int pastOrderCount = 0}) {
     final upper = code.trim().toUpperCase();
-    if (_promoCodes.containsKey(upper)) {
-      _promoCode = upper;
-      _discount = _promoCodes[upper]!;
-      notifyListeners();
-      _save();
-      return null; // success
+    if (!_promoCodes.containsKey(upper)) {
+      return 'Geçersiz promosyon kodu';
     }
-    return 'Geçersiz promosyon kodu';
+    // İlk sipariş kısıtlaması
+    if (_firstOrderOnlyCodes.contains(upper) && pastOrderCount > 0) {
+      return 'Bu kod yalnızca ilk siparişinizde kullanılabilir';
+    }
+    // Kategori kısıtlaması
+    final requiredCuisine = _promoRestrictions[upper];
+    if (requiredCuisine != null) {
+      final cuisine = _currentRestaurant?.cuisine ?? '';
+      if (cuisine != requiredCuisine) {
+        return 'Bu kod yalnızca "$requiredCuisine" restoranlarında geçerlidir';
+      }
+    }
+    _promoCode = upper;
+    _discount = _promoCodes[upper]!;
+    notifyListeners();
+    _save();
+    return null; // success
   }
 
   void removePromoCode() {
@@ -265,4 +287,10 @@ class CartProvider extends ChangeNotifier {
     final item = _items.where((ci) => ci.item.id == itemId);
     return item.isEmpty ? 0 : item.first.quantity;
   }
+
+  /// Farklı restorandan ürün eklenirse sepet temizlenecek mi kontrol et.
+  bool wouldConflict(String restaurantId) =>
+      _currentRestaurant != null &&
+      _currentRestaurant!.id != restaurantId &&
+      _items.isNotEmpty;
 }

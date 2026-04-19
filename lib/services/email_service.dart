@@ -14,8 +14,8 @@ class EmailService {
   // ── Buraya kendi EmailJS bilgilerini gir ──────────────────────
   static const _publicKey   = 'pM2gUZGExkXiVNIk_';
   static const _serviceId   = 'service_oeftn79';
-  static const _orderTemplateId    = 'template_7kckv4i';
-  static const _deliveryTemplateId = 'template_hvar76p';
+  static const _orderTemplateId      = 'template_7kckv4i';
+  static const _deliveryTemplateId   = 'template_hvar76p';
   // ─────────────────────────────────────────────────────────────
 
   static const _apiUrl = 'https://api.emailjs.com/api/v1.0/email/send';
@@ -82,6 +82,8 @@ class EmailService {
           'order_id'        : orderId,
           'restaurant_name' : restaurantName,
           'total_amount'    : '₺${total.toStringAsFixed(2)}',
+          'order_status'    : 'Teslim Edildi',
+          'status_message'  : 'Siparişiniz teslim edildi. Afiyet olsun! 🎉',
         },
       );
       debugPrint('EmailService: delivery notification sent to $toEmail');

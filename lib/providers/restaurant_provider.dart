@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/restaurant.dart';
@@ -20,6 +21,8 @@ extension SortOptionExt on SortOption {
 }
 
 class RestaurantProvider extends ChangeNotifier {
+  final _firestore = FirebaseFirestore.instance;
+
   // ── State ─────────────────────────────────────────────────────
   String      _city             = 'İstanbul';
   String      _district         = '';    // ilçe — empty = tümü
@@ -35,6 +38,8 @@ class RestaurantProvider extends ChangeNotifier {
   bool        _isLoading        = false;
   bool        _hasRealData      = false;
   List<Restaurant> _realRestaurants = [];
+  // Firestore'dan çekilen yorumlar — restoran listede olmasa da saklanır
+  final Map<String, List<Review>> _globalReviews = {};
 
   // ── Getters ───────────────────────────────────────────────────
   String     get selectedCity       => _city;
@@ -50,6 +55,10 @@ class RestaurantProvider extends ChangeNotifier {
   Set<String> get favorites         => _favorites;
   bool       get isLoading          => _isLoading;
   bool       get hasRealData        => _hasRealData;
+
+  /// Firestore'dan çekilen yorumları döner — restoran listede olmasa bile çalışır
+  List<Review> getFirestoreReviewsForRestaurant(String id) =>
+      _globalReviews[id] ?? [];
 
   final List<String> deliveryTimeOptions = [
     '5-15 dk','15-25 dk','25-35 dk','35-45 dk','45-55 dk','1+ saat',
@@ -92,6 +101,26 @@ class RestaurantProvider extends ChangeNotifier {
   }
 
   Future<void> addUserReview(String restaurantId, Review review) async {
+    final reviewMap = {
+      'id': review.id,
+      'userName': review.userName,
+      'rating': review.rating,
+      'comment': review.comment,
+      'createdAt': review.createdAt.toIso8601String(),
+    };
+
+    // Firestore'a yaz — tüm kullanıcılar görebilsin
+    try {
+      await _firestore
+          .collection('restaurants')
+          .doc(restaurantId)
+          .collection('reviews')
+          .doc(review.id)
+          .set(reviewMap);
+    } catch (e) {
+      debugPrint('RestaurantProvider Firestore review write error: $e');
+    }
+
     final idx = _realRestaurants.indexWhere((r) => r.id == restaurantId);
 
     if (idx >= 0) {
@@ -108,8 +137,6 @@ class RestaurantProvider extends ChangeNotifier {
       notifyListeners();
       await _persistUserReviews(old, newReviews, newRating, old.reviewCount + 1);
     } else {
-      // Restaurant not in current list — persist by ID only so it applies
-      // when the restaurant is loaded next time.
       final prefs = await SharedPreferences.getInstance();
       final key = _reviewKey(restaurantId);
       final existing = prefs.getString(key);
@@ -126,14 +153,64 @@ class RestaurantProvider extends ChangeNotifier {
           rating = double.parse((total / reviewCount).toStringAsFixed(1));
         } catch (_) {}
       }
-      reviews.insert(0, {
-        'id': review.id, 'userName': review.userName, 'rating': review.rating,
-        'comment': review.comment, 'createdAt': review.createdAt.toIso8601String(),
-      });
+      reviews.insert(0, reviewMap);
       await prefs.setString(key, jsonEncode({
         'rating': rating, 'reviewCount': reviewCount,
         'reviews': reviews.take(50).toList(),
       }));
+    }
+  }
+
+  /// Restoran detay ekranı açılınca Firestore'daki yorumları çekip uygular.
+  Future<void> fetchReviewsForRestaurant(String restaurantId) async {
+    try {
+      final snap = await _firestore
+          .collection('restaurants')
+          .doc(restaurantId)
+          .collection('reviews')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      if (snap.docs.isEmpty) return;
+
+      final fsReviews = snap.docs.map((doc) {
+        final d = doc.data();
+        return Review(
+          id: d['id'] ?? doc.id,
+          userName: d['userName'] ?? '',
+          rating: (d['rating'] as num).toDouble(),
+          comment: d['comment'] ?? '',
+          createdAt: DateTime.tryParse(d['createdAt'] ?? '') ?? DateTime.now(),
+        );
+      }).toList();
+
+      // Yorumları global haritaya daima kaydet — restoran listede olmasa bile
+      _globalReviews[restaurantId] = fsReviews;
+
+      final idx = _realRestaurants.indexWhere((r) => r.id == restaurantId);
+      if (idx < 0) {
+        notifyListeners(); // global map güncellendi, UI yenilensin
+        return;
+      }
+
+      final old = _realRestaurants[idx];
+      // Firestore yorumlarını ekle, duplicate'leri atla
+      final existingIds = old.reviews.map((r) => r.id).toSet();
+      final newOnly = fsReviews.where((r) => !existingIds.contains(r.id)).toList();
+      if (newOnly.isEmpty) return;
+
+      final allReviews = [...newOnly, ...old.reviews];
+      final totalRating = allReviews.fold(0.0, (s, r) => s + r.rating);
+      final newRating = double.parse((totalRating / allReviews.length).toStringAsFixed(1));
+
+      _realRestaurants[idx] = old.copyWith(
+        reviews: allReviews,
+        rating: newRating,
+        reviewCount: allReviews.length,
+      );
+      notifyListeners();
+    } catch (e) {
+      debugPrint('RestaurantProvider fetchReviews error: $e');
     }
   }
 

@@ -100,11 +100,10 @@ class _HomePageState extends State<_HomePage> {
   String? _lastLoadedAddressId; // track which address we last loaded for
 
   final List<_BannerData> _banners = [
-    const _BannerData(emoji: '🍕', title: "Pizza Günü!", subtitle: "Tüm pizzalarda %30 indirim", code: "BIYEMEK30", color1: Color(0xFFFF6B35), color2: Color(0xFFFF8C42)),
-    const _BannerData(emoji: '🍔', title: "Burger Festivali", subtitle: "50₺ üzeri siparişte ücretsiz teslimat", code: "HOSGELDIN", color1: Color(0xFF06C167), color2: Color(0xFF059652)),
-    const _BannerData(emoji: '☕', title: "Kahve Saati", subtitle: "Kahve siparişlerinde %15 indirim", code: "YEMEK15", color1: Color(0xFF6F4E37), color2: Color(0xFF8B6355)),
-    const _BannerData(emoji: '🌮', title: "Sokak Lezzetleri", subtitle: "Kumpir & Kokoreçte fırsat", code: "INDIRIM25", color1: Color(0xFFE91E8C), color2: Color(0xFFFF4B6E)),
-    const _BannerData(emoji: '🎉', title: "İlk Siparişine Özel", subtitle: "HOSGELDIN kodu ile %20 indirim", code: "HOSGELDIN", color1: Color(0xFF7C3AED), color2: Color(0xFF9F67FA)),
+    const _BannerData(emoji: '🍕', title: "Tüm Yemeklerde %30 İndirim", subtitle: "Tüm siparişlerde geçerli — BIYEMEK30", code: "BIYEMEK30", color1: Color(0xFFFF6B35), color2: Color(0xFFFF8C42)),
+    const _BannerData(emoji: '☕', title: "Kahve Saati", subtitle: "Kahve & İçecek kategorisinde %15 indirim", code: "KAHVE15", color1: Color(0xFF6F4E37), color2: Color(0xFF8B6355)),
+    const _BannerData(emoji: '🌮', title: "Sokak Lezzetleri", subtitle: "Sokak Lezzetleri kategorisinde %25 indirim", code: "SOKAK25", color1: Color(0xFFE91E8C), color2: Color(0xFFFF4B6E)),
+    const _BannerData(emoji: '🎉', title: "İlk Siparişine Özel", subtitle: "İlk siparişinde %20 indirim — HOSGELDIN", code: "HOSGELDIN", color1: Color(0xFF7C3AED), color2: Color(0xFF9F67FA)),
   ];
 
 
@@ -208,6 +207,13 @@ class _HomePageState extends State<_HomePage> {
     // Works even when the address has no lat/lng (manually entered addresses).
     final addr = auth.selectedAddress;
     final addressChanged = addr != null && addr.id != _lastLoadedAddressId;
+    // Adres yoksa GPS ile yükle
+    if (addr == null && !rp.hasRealData && !rp.isLoadingReal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadNearbyIfNeeded();
+      });
+    }
+
     if (addr != null &&
         (!rp.hasRealData || addressChanged) &&
         !rp.isLoadingReal) {

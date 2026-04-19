@@ -133,12 +133,14 @@ class AuthProvider extends ChangeNotifier {
   int _selectedAddressIdx = 0;
   Set<String> _favorites = {};
   double _balance = 0.0;
+  Set<String> _usedPromoCodes = {};
 
   bool get isLoggedIn => _user != null;
   MockUser? get currentUser => _user;
   List<UserAddress> get addresses => _addresses;
   Set<String> get favorites => _favorites;
   double get balance => _balance;
+  Set<String> get usedPromoCodes => _usedPromoCodes;
   UserAddress? get selectedAddress =>
       _addresses.isEmpty ? null : _addresses[_selectedAddressIdx.clamp(0, _addresses.length - 1)];
 
@@ -148,6 +150,7 @@ class AuthProvider extends ChangeNotifier {
   String get _selKey     => 'addr_sel_$_uid';
   String get _favKey     => 'fav_$_uid';
   String get _balanceKey => 'balance_$_uid';
+  String get _promoKey   => 'used_promos_$_uid';
 
   bool isFavorite(String restaurantId) => _favorites.contains(restaurantId);
 
@@ -166,6 +169,16 @@ class AuthProvider extends ChangeNotifier {
     try {
       final fbUser = _auth.currentUser;
       if (fbUser != null) {
+        // E-posta/şifre ile kayıt olmuş ancak henüz doğrulamamış kullanıcıyı
+        // oturum açmış sayma — doğrulama ekranı bypass edilmesin.
+        final isEmailProvider =
+            fbUser.providerData.any((p) => p.providerId == 'password');
+        if (isEmailProvider && !fbUser.emailVerified) {
+          // Yerel Firebase oturumunu kapat, kullanıcı doğrulama ekranına düşsün
+          await _auth.signOut();
+          notifyListeners();
+          return;
+        }
         await _loadFromFirebase(fbUser);
       }
       notifyListeners();
@@ -223,6 +236,11 @@ class AuthProvider extends ChangeNotifier {
       } else if (_balance != 0.0) {
         await _persistBalance();
       }
+
+      if (data != null && data.containsKey('usedPromoCodes')) {
+        final list = data['usedPromoCodes'] as List? ?? [];
+        _usedPromoCodes = Set<String>.from(list.map((e) => e.toString()));
+      }
     } catch (e) {
       debugPrint('AuthProvider Firestore load error: $e');
     }
@@ -246,6 +264,31 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _balance = prefs.getDouble(_balanceKey) ?? 0.0;
+
+    final promoList = prefs.getStringList(_promoKey);
+    if (promoList != null) {
+      _usedPromoCodes = Set<String>.from(promoList);
+    }
+  }
+
+  // ── Promo kodu kullanımı ────────────────────────────────────
+  bool isPromoCodeUsed(String code) => _usedPromoCodes.contains(code.trim().toUpperCase());
+
+  Future<void> markPromoCodeUsed(String code) async {
+    final upper = code.trim().toUpperCase();
+    _usedPromoCodes.add(upper);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_promoKey, _usedPromoCodes.toList());
+    } catch (_) {}
+    if (_user != null) {
+      try {
+        await _firestore.collection('users').doc(_user!.uid).set(
+          {'usedPromoCodes': _usedPromoCodes.toList()},
+          SetOptions(merge: true),
+        );
+      } catch (_) {}
+    }
   }
 
   // ── Hata mesajlarını Türkçe'ye çevir ────────────────────────
@@ -365,14 +408,14 @@ class AuthProvider extends ChangeNotifier {
       final cred = await _auth.signInWithCredential(credential);
       final fbUser = cred.user!;
 
-      // Yeni kayıt ise Firestore'a ekle
+      // Yeni kayıt ise Firestore'a ekle (merge: true → mevcut veriyi silmez)
       if (cred.additionalUserInfo?.isNewUser == true) {
         await _firestore.collection('users').doc(fbUser.uid).set({
           'name': fbUser.displayName ?? '',
           'phone': '',
           'email': fbUser.email ?? '',
           'createdAt': FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: true));
       }
 
       await _loadFromFirebase(fbUser);
@@ -412,6 +455,7 @@ class AuthProvider extends ChangeNotifier {
     _addresses = [];
     _favorites = {};
     _balance = 0.0;
+    _usedPromoCodes = {};
     _selectedAddressIdx = 0;
     notifyListeners();
   }
@@ -427,6 +471,7 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove(_selKey);
     await prefs.remove(_favKey);
     await prefs.remove(_balanceKey);
+    await prefs.remove(_promoKey);
     await prefs.remove('orders_$uid');
     await prefs.remove('reviews_$uid');
     await prefs.remove('cards_$uid');
@@ -454,10 +499,18 @@ class AuthProvider extends ChangeNotifier {
       await _auth.currentUser?.delete();
     } catch (_) {}
 
+    // 4. Her durumda yerel oturumu temizle.
+    //    Google hesaplarında delete() "requires-recent-login" hatası verebilir;
+    //    hata yutulsa bile signOut çağrısı Firebase cached session'ı temizler
+    //    → uygulama yeniden açılınca kullanıcı giriş ekranına düşer.
+    try { await _auth.signOut(); } catch (_) {}
+    try { await _gSignIn.signOut(); } catch (_) {}
+
     _user = null;
     _addresses = [];
     _favorites = {};
     _balance = 0.0;
+    _usedPromoCodes = {};
     _selectedAddressIdx = 0;
     notifyListeners();
   }

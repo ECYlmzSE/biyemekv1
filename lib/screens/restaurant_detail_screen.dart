@@ -28,6 +28,11 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       final show = _sc.offset > 200;
       if (show != _showTitle) setState(() => _showTitle = show);
     });
+    // Firestore'daki yorumları çek — diğer kullanıcıların yorumları görünsün
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<RestaurantProvider>()
+          .fetchReviewsForRestaurant(widget.restaurant.id);
+    });
   }
 
   @override
@@ -171,6 +176,21 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   ));
 
   void _showReviewsSheet(BuildContext context, Restaurant r) {
+    final rp = context.read<RestaurantProvider>();
+    // Yerel + Firestore yorumlarını birleştir, duplicate'leri at
+    final localIds = r.reviews.map((rv) => rv.id).toSet();
+    final fsOnly = rp.getFirestoreReviewsForRestaurant(r.id)
+        .where((rv) => !localIds.contains(rv.id))
+        .toList();
+    final allReviews = [...r.reviews, ...fsOnly]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final displayRating = allReviews.isEmpty
+        ? r.rating
+        : double.parse(
+            (allReviews.fold(0.0, (s, rv) => s + rv.rating) / allReviews.length)
+                .toStringAsFixed(1));
+
     showModalBottomSheet(
       context: context, isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -183,28 +203,28 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             Row(children: [
               const Icon(Icons.star, color: Color(0xFFFFC107), size: 20),
               const SizedBox(width: 6),
-              Text('${r.rating}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('$displayRating', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
-              Text('(${r.reviewCount} değerlendirme)', style: const TextStyle(color: AppTheme.grey)),
+              Text('(${allReviews.length} değerlendirme)', style: const TextStyle(color: AppTheme.grey)),
             ]),
           ),
           const Divider(),
-          Expanded(child: r.reviews.isEmpty
+          Expanded(child: allReviews.isEmpty
             ? const Center(child: Text('Henüz yorum yok', style: TextStyle(color: AppTheme.grey)))
             : ListView.separated(
                 controller: sc,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                itemCount: r.reviews.length,
+                itemCount: allReviews.length,
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (ctx2, i) {
-                  final rev = r.reviews[i];
+                  final rev = allReviews[i];
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         CircleAvatar(radius: 16,
                           backgroundColor: AppTheme.primaryGreen.withOpacity(0.15),
-                          child: Text(rev.userName[0].toUpperCase(),
+                          child: Text(rev.userName.isNotEmpty ? rev.userName[0].toUpperCase() : '?',
                             style: const TextStyle(color: AppTheme.primaryGreen, fontWeight: FontWeight.bold, fontSize: 13))),
                         const SizedBox(width: 10),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -249,6 +269,40 @@ class _MenuItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final qty = cart.getItemQuantity(item.id);
+
+    void doAdd() {
+      if (cart.wouldConflict(restaurant.id)) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Sepeti Temizle?'),
+            content: Text(
+              '${cart.currentRestaurant!.name} restoranından ürünler sepetinizde bulunuyor.\n'
+              'Farklı bir restorandan sipariş vermek için mevcut sepet temizlenecek.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Vazgeç'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  cart.clearCart();
+                  cart.addItem(item, restaurant);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Evet, Temizle', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      } else {
+        cart.addItem(item, restaurant);
+      }
+    }
+
     return GestureDetector(
       onTap: () => ItemDetailSheet.show(context, item, restaurant),
       child: Container(
@@ -292,7 +346,7 @@ class _MenuItemCard extends StatelessWidget {
             ? Padding(
                 padding: const EdgeInsets.only(right: 12, bottom: 8),
                 child: GestureDetector(
-                  onTap: () => cart.addItem(item, restaurant),
+                  onTap: doAdd,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     decoration: BoxDecoration(color: AppTheme.primaryGreen, borderRadius: BorderRadius.circular(20)),
@@ -306,7 +360,7 @@ class _MenuItemCard extends StatelessWidget {
                   _CounterBtn(icon: Icons.remove, onTap: () => cart.removeItem(item.id)),
                   Padding(padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
-                  _CounterBtn(icon: Icons.add, onTap: () => cart.addItem(item, restaurant)),
+                  _CounterBtn(icon: Icons.add, onTap: doAdd),
                 ]),
               ),
         ]),

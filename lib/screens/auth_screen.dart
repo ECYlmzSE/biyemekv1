@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/card_provider.dart';
 import '../theme/app_theme.dart';
@@ -78,6 +79,8 @@ class _AuthScreenState extends State<AuthScreen>
     final uid = context.read<AuthProvider>().currentUser?.uid ?? 'guest';
     await context.read<OrderProvider>().switchUser(uid);
     await context.read<CardProvider>().initialize(uid);
+    // Kullanıcı geçişinde sepeti temizle (başka kullanıcının sepeti görünmesin)
+    if (mounted) context.read<CartProvider>().clearCart();
     if (!mounted) return;
     // Tüm önceki ekranları (welcome + auth) temizleyerek ana ekrana git
     Navigator.of(context).pushAndRemoveUntil(
@@ -105,6 +108,21 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _loading = false);
 
     if (error != null) { _showError(error); return; }
+
+    // E-posta doğrulanmamışsa doğrulama ekranına yönlendir
+    final auth = context.read<AuthProvider>();
+    if (!auth.isEmailVerified) {
+      await auth.sendVerificationEmail();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => EmailVerificationScreen(email: email),
+        ),
+        (_) => false,
+      );
+      return;
+    }
+
     await _postLoginSetup();
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
@@ -206,10 +207,10 @@ class ProfileScreen extends StatelessWidget {
 
   void _showPromoSheet(BuildContext context) {
     const codes = [
-      {'code': 'BIYEMEK30', 'desc': 'Tüm siparişlerde %30 indirim', 'expiry': '31.12.2025'},
-      {'code': 'HOSGELDIN', 'desc': 'İlk siparişte %20 indirim', 'expiry': '31.12.2025'},
-      {'code': 'YEMEK15', 'desc': 'Kahve & İçeceklerde %15 indirim', 'expiry': '31.12.2025'},
-      {'code': 'INDIRIM25', 'desc': 'Sokak lezzetlerinde %25 indirim', 'expiry': '31.12.2025'},
+      {'code': 'BIYEMEK30', 'desc': 'Tüm siparişlerde geçerli — %30 indirim'},
+      {'code': 'KAHVE15',   'desc': 'Kahve & İçecek kategorisinde — %15 indirim'},
+      {'code': 'SOKAK25',   'desc': 'Sokak Lezzetleri kategorisinde — %25 indirim'},
+      {'code': 'HOSGELDIN', 'desc': 'İlk siparişinizde geçerli — %20 indirim'},
     ];
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -222,8 +223,7 @@ class ProfileScreen extends StatelessWidget {
             leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppTheme.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.local_offer, color: AppTheme.orange)),
             title: Text(c['code']!, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'monospace')),
-            subtitle: Text('${c['desc']}\nSon kullanma: ${c['expiry']}'),
-            isThreeLine: true,
+            subtitle: Text(c['desc']!),
           )).toList())),
         ]),
       ),
@@ -255,7 +255,7 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Quick amount buttons
-            Row(children: [50.0, 100.0, 200.0, 500.0].map((v) =>
+            Row(children: [100.0, 250.0, 500.0, 1000.0].map((v) =>
               Expanded(child: Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: OutlinedButton(
@@ -377,50 +377,53 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
             SizedBox(width: double.infinity, child: ElevatedButton(
               onPressed: () async {
-                final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
-                if (amount <= 0) {
-                  ScaffoldMessenger.of(ctx2).showSnackBar(const SnackBar(
-                    content: Text('Geçerli bir tutar giriniz'),
-                    backgroundColor: AppTheme.red,
-                  ));
-                  return;
+                final sm = ScaffoldMessenger.of(context);
+
+                void showErr(String msg) {
+                  sm..clearSnackBars()..showSnackBar(SnackBar(
+                    content: Text(msg), backgroundColor: AppTheme.red));
                 }
-                // Validate new card fields
+
+                final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
+                if (amount <= 0) { showErr('Geçerli bir tutar giriniz'); return; }
+                if (amount > 50000) { showErr('Tek seferde en fazla ₺50.000 yüklenebilir'); return; }
+
+                // Yeni kart doğrulama
                 if (useNewCard) {
                   final digits = cardNoCtrl.text.replaceAll(' ', '');
-                  if (digits.length < 16) {
-                    ScaffoldMessenger.of(ctx2).showSnackBar(const SnackBar(
-                      content: Text('Geçerli bir kart numarası giriniz'),
-                      backgroundColor: AppTheme.red,
-                    ));
-                    return;
+                  if (digits.length != 16) { showErr('Kart numarası 16 haneli olmalıdır'); return; }
+
+                  // Luhn algoritması
+                  int luhnSum = 0;
+                  for (int i = 0; i < digits.length; i++) {
+                    int d = int.tryParse(digits[digits.length - 1 - i]) ?? 0;
+                    if (i.isOdd) { d *= 2; if (d > 9) d -= 9; }
+                    luhnSum += d;
                   }
-                  if (!expiryCtrl.text.contains('/') || expiryCtrl.text.length < 5) {
-                    ScaffoldMessenger.of(ctx2).showSnackBar(const SnackBar(
-                      content: Text('Son kullanma tarihini AA/YY formatında giriniz'),
-                      backgroundColor: AppTheme.red,
-                    ));
-                    return;
+                  if (luhnSum % 10 != 0) { showErr('Geçersiz kart numarası'); return; }
+
+                  // Son kullanma tarihi
+                  final parts = expiryCtrl.text.split('/');
+                  if (parts.length != 2 || parts[0].length != 2 || parts[1].length != 2) {
+                    showErr('Son kullanma tarihini AA/YY formatında giriniz'); return;
                   }
-                  if (cvvCtrl.text.length < 3) {
-                    ScaffoldMessenger.of(ctx2).showSnackBar(const SnackBar(
-                      content: Text('CVV 3 haneli olmalıdır'),
-                      backgroundColor: AppTheme.red,
-                    ));
-                    return;
+                  final month = int.tryParse(parts[0]) ?? 0;
+                  final year  = int.tryParse(parts[1]) ?? 0;
+                  if (month < 1 || month > 12) { showErr('Geçersiz ay (01-12)'); return; }
+                  final now = DateTime.now();
+                  final expiry = DateTime(2000 + year, month + 1);
+                  if (expiry.isBefore(DateTime(now.year, now.month))) {
+                    showErr('Kartın son kullanma tarihi geçmiş'); return;
                   }
-                  if (holderCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(ctx2).showSnackBar(const SnackBar(
-                      content: Text('Kart üzerindeki ismi giriniz'),
-                      backgroundColor: AppTheme.red,
-                    ));
-                    return;
-                  }
+
+                  if (cvvCtrl.text.length < 3) { showErr('CVV 3 haneli olmalıdır'); return; }
+                  if (holderCtrl.text.trim().isEmpty) { showErr('Kart üzerindeki ismi giriniz'); return; }
                 }
+
                 await auth.addBalance(amount);
                 if (ctx2.mounted) {
                   Navigator.pop(ctx2);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  sm..clearSnackBars()..showSnackBar(SnackBar(
                     content: Text('₺${amount.toStringAsFixed(2)} bakiyenize yüklendi! 🎉'),
                     backgroundColor: AppTheme.primaryGreen,
                   ));
@@ -488,7 +491,11 @@ class ProfileScreen extends StatelessWidget {
       content: const Text('Hesabınızdan çıkış yapmak istiyor musunuz?'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-        ElevatedButton(onPressed: () { Navigator.pop(ctx); auth.signOut(); }, child: const Text('Çıkış Yap')),
+        ElevatedButton(onPressed: () {
+          Navigator.pop(ctx);
+          context.read<CartProvider>().clearCart();
+          auth.signOut();
+        }, child: const Text('Çıkış Yap')),
       ],
     ));
   }

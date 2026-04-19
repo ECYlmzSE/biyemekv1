@@ -83,9 +83,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
               Container(
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
@@ -143,7 +146,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                       style: TextStyle(color: AppTheme.grey)),
                 ),
               ],
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -149,6 +149,20 @@ class OrderProvider extends ChangeNotifier with WidgetsBindingObserver {
       }));
     } else if (currentStatus == OrderStatus.onTheWay) {
       _updateStatus(orderId, OrderStatus.delivered);
+      // Uygulama kapatılıp açıldığı için timer tetiklenmedi — maili burada gönder
+      final idx = _orders.indexWhere((o) => o.id == orderId);
+      if (idx >= 0) {
+        final o = _orders[idx];
+        if (o.userEmail.isNotEmpty) {
+          EmailService.sendDeliveryNotification(
+            toEmail        : o.userEmail,
+            toName         : o.userName.isNotEmpty ? o.userName : 'Değerli Müşterimiz',
+            orderId        : o.id,
+            restaurantName : o.restaurantName,
+            total          : o.total,
+          );
+        }
+      }
     }
   }
 
@@ -239,12 +253,13 @@ class OrderProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> cancelOrder(String orderId) async {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx < 0 || !_orders[idx].status.isActive) return;
-    // Cancel all pending timers and scheduled notifications for this order
     _cancelOrderTimers(orderId);
     FirebaseService.cancelOrderNotifications(orderId);
-    _orders[idx] = _orders[idx].copyWith(status: OrderStatus.cancelled);
+    final o = _orders[idx];
+    _orders[idx] = o.copyWith(status: OrderStatus.cancelled);
     await _saveOrders();
     notifyListeners();
+
   }
 
   Future<void> _saveOrders() async {

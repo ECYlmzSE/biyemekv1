@@ -3,35 +3,51 @@ class TurkeyGeoData {
 
   static List<String> get allCities => _districts.keys.toList()..sort();
 
+  /// Türkçe karakterleri ASCII'ye indirger — tüm karşılaştırmalar bununla yapılır.
+  /// ÖNEMLİ: 'İ' (U+0130) toLowerCase'den ÖNCE 'i'ye çevrilmeli; aksi hâlde
+  /// Dart 'i\u0307' (iki karakter) üretir ve plain 'i' ile eşleşmez.
+  static String _n(String s) => s
+      .replaceAll('İ', 'i')
+      .replaceAll('I', 'i')
+      .toLowerCase()
+      .replaceAll('ı', 'i')
+      .replaceAll('ğ', 'g')
+      .replaceAll('ü', 'u')
+      .replaceAll('ş', 's')
+      .replaceAll('ö', 'o')
+      .replaceAll('ç', 'c');
+
   static List<String> getDistricts(String city) {
     if (city.isEmpty) return [];
-    // Exact match (case-insensitive)
+    final cn = _n(city);
+    // 1. Tam normalize eşleşme
     for (final key in _districts.keys) {
-      if (key.toLowerCase() == city.toLowerCase()) return List<String>.from(_districts[key]!)..sort();
+      if (_n(key) == cn) return List<String>.from(_districts[key]!)..sort();
     }
-    // Starts-with match
+    // 2. Başlangıç eşleşmesi
     for (final key in _districts.keys) {
-      final kl = key.toLowerCase(); final cl = city.toLowerCase();
-      if (kl.startsWith(cl) || cl.startsWith(kl)) return List<String>.from(_districts[key]!)..sort();
+      final kn = _n(key);
+      if (kn.startsWith(cn) || cn.startsWith(kn)) return List<String>.from(_districts[key]!)..sort();
     }
-    // Substring match
+    // 3. İçerme eşleşmesi
     for (final key in _districts.keys) {
-      if (key.toLowerCase().contains(city.toLowerCase()) ||
-          city.toLowerCase().contains(key.toLowerCase())) return List<String>.from(_districts[key]!)..sort();
+      final kn = _n(key);
+      if (kn.contains(cn) || cn.contains(kn)) return List<String>.from(_districts[key]!)..sort();
     }
     return [];
   }
 
   static List<String> getNeighborhoods(String district) {
     if (district.isEmpty) return [];
-    // Exact match
+    final dn = _n(district);
+    // 1. Tam normalize eşleşme
     for (final key in _neighborhoods.keys) {
-      if (key.toLowerCase() == district.toLowerCase()) return List<String>.from(_neighborhoods[key]!)..sort();
+      if (_n(key) == dn) return List<String>.from(_neighborhoods[key]!)..sort();
     }
-    // Starts-with match
+    // 2. Başlangıç eşleşmesi
     for (final key in _neighborhoods.keys) {
-      if (district.toLowerCase().startsWith(key.toLowerCase()) ||
-          key.toLowerCase().startsWith(district.toLowerCase())) return List<String>.from(_neighborhoods[key]!)..sort();
+      final kn = _n(key);
+      if (dn.startsWith(kn) || kn.startsWith(dn)) return List<String>.from(_neighborhoods[key]!)..sort();
     }
     return [];
   }
@@ -41,19 +57,20 @@ class TurkeyGeoData {
   static String findDistrictByNeighborhood(String city, String neighborhood) {
     if (neighborhood.isEmpty) return '';
     final dists = getDistricts(city);
-    final neighLo = neighborhood.toLowerCase();
-    // Önce tam eşleşme
+    final nn = _n(neighborhood);
+    // Tam normalize eşleşme
     for (final dist in dists) {
       final neighs = getNeighborhoods(dist);
       for (final n in neighs) {
-        if (n.toLowerCase() == neighLo) return dist;
+        if (_n(n) == nn) return dist;
       }
     }
-    // Sonra içerme
+    // İçerme eşleşmesi
     for (final dist in dists) {
       final neighs = getNeighborhoods(dist);
       for (final n in neighs) {
-        if (n.toLowerCase().contains(neighLo) || neighLo.contains(n.toLowerCase())) return dist;
+        final kn = _n(n);
+        if (kn.contains(nn) || nn.contains(kn)) return dist;
       }
     }
     return '';

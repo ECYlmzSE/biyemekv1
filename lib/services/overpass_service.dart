@@ -74,17 +74,28 @@ class OverpassService {
 out body center;
 ''';
 
-    try {
-      final response = await http
-          .post(
-            Uri.parse(_endpoint),
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'data=${Uri.encodeComponent(query)}',
-          )
-          .timeout(const Duration(seconds: 35));
+    http.Response? response;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await http
+            .post(
+              Uri.parse(_endpoint),
+              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              body: 'data=${Uri.encodeComponent(query)}',
+            )
+            .timeout(const Duration(seconds: 35));
+        if (response.statusCode == 200) break;
+        debugPrint('Overpass HTTP ${response.statusCode} (deneme $attempt/3)');
+        if (attempt < 3) await Future.delayed(Duration(seconds: attempt * 2));
+      } catch (e) {
+        debugPrint('Overpass deneme $attempt hata: $e');
+        if (attempt < 3) await Future.delayed(Duration(seconds: attempt * 2));
+      }
+    }
 
-      if (response.statusCode != 200) {
-        debugPrint('Overpass HTTP ${response.statusCode}');
+    try {
+      if (response == null || response.statusCode != 200) {
+        debugPrint('Overpass 3 denemeden sonra başarısız');
         return [];
       }
 

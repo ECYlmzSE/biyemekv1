@@ -136,16 +136,12 @@ class _Payment3DSScreenState extends State<Payment3DSScreen>
       verificationFailed: (e) {
         debugPrint('verifyPhoneNumber failed: ${e.code} | ${e.message}');
         if (!mounted) return;
-        final isInvalidNum = e.code == 'invalid-phone-number';
+        // Her hata durumunda telefon giriş ekranına dön (OTP ekranına geçme,
+        // verificationId null olduğu için kod doğrulanamaz)
         setState(() {
-          _phase = isInvalidNum ? _Phase.phoneEntry : _Phase.otpInput;
+          _phase = _Phase.phoneEntry;
           _error = _mapFirebaseError(e.code, e.message);
         });
-        if (!isInvalidNum) {
-          _startTimer();
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) => _otpFocus.requestFocus());
-        }
       },
       codeSent: (verificationId, resendToken) {
         _verificationId = verificationId;
@@ -161,13 +157,20 @@ class _Payment3DSScreenState extends State<Payment3DSScreen>
   }
 
   String _mapFirebaseError(String code, String? msg) {
+    // Error code 39 = Firebase internal error (genellikle geçici)
+    final isInternalErr = (msg ?? '').contains('Error code:39') ||
+        (msg ?? '').contains('internal error') ||
+        code == 'internal-error';
+    if (isInternalErr) {
+      return 'SMS geçici olarak gönderilemedi. Lütfen birkaç dakika bekleyip tekrar deneyin.';
+    }
     return switch (code) {
       'invalid-phone-number'   => 'Telefon numarası geçersiz. Lütfen düzeltin.',
-      'too-many-requests'      => 'Çok fazla deneme. Lütfen bekleyin.',
+      'too-many-requests'      => 'Çok fazla deneme yapıldı. Lütfen bekleyin.',
       'quota-exceeded'         => 'SMS kotası doldu. Daha sonra deneyin.',
       'network-request-failed' => 'İnternet bağlantısını kontrol edin.',
-      'operation-not-allowed'  => 'Firebase Phone Auth etkin değil.',
-      _                        => 'SMS gönderilemedi (${msg ?? code})',
+      'operation-not-allowed'  => 'Telefon doğrulama aktif değil.',
+      _                        => 'SMS gönderilemedi. Tekrar deneyin.',
     };
   }
 

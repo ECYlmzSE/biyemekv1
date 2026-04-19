@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
+import '../providers/order_provider.dart';
 import '../theme/app_theme.dart';
 
 class PromotionsScreen extends StatefulWidget {
@@ -14,11 +15,10 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   bool _showInput = false;
 
   final List<Map<String, dynamic>> _campaigns = [
-    {'emoji':'🍕','code':'BIYEMEK30','title':'Bi\'Yemek\'e Hoş Geldin!','desc':'Tüm siparişlerde %30 indirim','discount':'%30','color':const Color(0xFF06C167),'exp':'28 Şubat 2026'},
-    {'emoji':'🎉','code':'HOSGELDIN','title':'İlk Sipariş İndirimi','desc':'İlk siparişinizde %20 indirim','discount':'%20','color':const Color(0xFF7C3AED),'exp':'31 Mart 2026'},
-    {'emoji':'🍔','code':'YEMEK15','title':'Burger Günleri','desc':'Burger kategorisinde %15 indirim','discount':'%15','color':const Color(0xFFFF6B35),'exp':'15 Mart 2026'},
-    {'emoji':'🌟','code':'INDIRIM25','title':'Hafta Sonu Fırsatı','desc':'Hafta sonu siparişlerinde %25 indirim','discount':'%25','color':const Color(0xFFE91E8C),'exp':'Her hafta sonu'},
-    {'emoji':'🍰','code':'TATLI10','title':'Tatlı Keyfi','desc':'Pastane & Tatlı kategorisinde %10 indirim','discount':'%10','color':const Color(0xFF6F4E37),'exp':'30 Nisan 2026'},
+    {'emoji':'🍕','code':'BIYEMEK30','title':'Tüm Yemeklerde %30 İndirim','desc':'Tüm siparişlerde geçerli','discount':'%30','color':const Color(0xFFFF6B35),'color2':const Color(0xFFFF8C42)},
+    {'emoji':'☕','code':'KAHVE15',  'title':'Kahve Saati',               'desc':'Kahve & İçecek kategorisinde geçerli','discount':'%15','color':const Color(0xFF6F4E37),'color2':const Color(0xFF8B6355)},
+    {'emoji':'🌮','code':'SOKAK25',  'title':'Sokak Lezzetleri',          'desc':'Sokak Lezzetleri kategorisinde geçerli','discount':'%25','color':const Color(0xFFE91E8C),'color2':const Color(0xFFFF4B6E)},
+    {'emoji':'🎉','code':'HOSGELDIN','title':'İlk Siparişine Özel',       'desc':'Yalnızca ilk siparişinizde geçerli','discount':'%20','color':const Color(0xFF7C3AED),'color2':const Color(0xFF9F67FA)},
   ];
 
   @override
@@ -90,7 +90,8 @@ class _CampaignCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = campaign['color'] as Color;
+    final color  = campaign['color']  as Color;
+    final color2 = (campaign['color2'] as Color?) ?? color.withOpacity(0.7);
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -102,7 +103,7 @@ class _CampaignCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [color, color.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            gradient: LinearGradient(colors: [color, color2], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
           child: Row(children: [
@@ -128,12 +129,11 @@ class _CampaignCard extends StatelessWidget {
               decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
               child: Text(campaign['code']!, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
             ),
-            const SizedBox(width: 10),
-            Text('Son: ${campaign['exp']}', style: TextStyle(color: AppTheme.grey, fontSize: 12)),
             const Spacer(),
             GestureDetector(
               onTap: () {
-                final err = context.read<CartProvider>().applyPromoCode(campaign['code']!);
+                final pastCount = context.read<OrderProvider>().orders.length;
+                final err = context.read<CartProvider>().applyPromoCode(campaign['code']!, pastOrderCount: pastCount);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(err ?? 'Kod uygulandı! 🎉'),
                   backgroundColor: err != null ? AppTheme.red : AppTheme.primaryGreen,

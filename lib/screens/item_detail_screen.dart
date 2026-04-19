@@ -897,7 +897,7 @@ class _ItemDetailSheetState extends State<ItemDetailSheet> {
         .where((o) => _optIds.contains(o.id) && !o.isRemovable)
         .toList();
 
-    context.read<CartProvider>().addCustomItem(CartItem(
+    final newItem = CartItem(
       item: widget.item,
       restaurant: widget.restaurant,
       quantity: _qty,
@@ -905,19 +905,56 @@ class _ItemDetailSheetState extends State<ItemDetailSheet> {
       removedIngredients: removedList,
       sideItems: sideList,
       selectedOptions: optList,
-    ));
+    );
 
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle, color: Colors.white, size: 16),
-        const SizedBox(width: 8),
-        Expanded(child: Text('${widget.item.name} sepete eklendi')),
-      ]),
-      backgroundColor: AppTheme.primaryGreen,
-      duration: const Duration(seconds: 2),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
+    final cart = context.read<CartProvider>();
+
+    void doCommit() {
+      cart.addCustomItem(newItem);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle, color: Colors.white, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text('${widget.item.name} sepete eklendi')),
+        ]),
+        backgroundColor: AppTheme.primaryGreen,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+
+    if (cart.wouldConflict(widget.restaurant.id)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Sepeti Temizle?'),
+          content: Text(
+            '${cart.currentRestaurant!.name} restoranından ürünler sepetinizde bulunuyor.\n'
+            'Farklı bir restorandan sipariş vermek için mevcut sepet temizlenecek.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                cart.clearCart();
+                doCommit();
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Evet, Temizle', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      doCommit();
+    }
   }
 }

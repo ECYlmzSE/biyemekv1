@@ -268,14 +268,27 @@ class _AddressDetailScreenState extends State<AddressDetailScreen> {
     final cities = TurkeyGeoData.allCities;
     _city        = _matchCity(widget.city, cities);
     _districts   = TurkeyGeoData.getDistricts(_city);
+
     // GPS'den ilçe gelmediyse mahalle adından bulmaya çalış
     String gpsDist = widget.district;
     if (gpsDist.isEmpty && widget.neighborhood.isNotEmpty) {
       gpsDist = TurkeyGeoData.findDistrictByNeighborhood(_city, widget.neighborhood);
     }
+    // İlçeyi de normalize ederek listeyle eşleştir (ı/i sorunu vb.)
+    if (gpsDist.isNotEmpty) {
+      final matched = _matchFromList(gpsDist, _districts);
+      if (matched.isNotEmpty) gpsDist = matched;
+    }
     _district      = gpsDist; // kullanıcı boş bırakabilir, zorunlu validator yakalar
     _neighborhoods = TurkeyGeoData.getNeighborhoods(_district);
-    _neighborhood  = widget.neighborhood.isNotEmpty ? widget.neighborhood
+
+    // Mahalleyi de normalize ederek listeyle eşleştir
+    String gpsNeigh = widget.neighborhood;
+    if (gpsNeigh.isNotEmpty) {
+      final matched = _matchFromList(gpsNeigh, _neighborhoods);
+      if (matched.isNotEmpty) gpsNeigh = matched;
+    }
+    _neighborhood  = gpsNeigh.isNotEmpty ? gpsNeigh
         : (_neighborhoods.isNotEmpty ? _neighborhoods.first : '');
   }
 
@@ -291,15 +304,42 @@ class _AddressDetailScreenState extends State<AddressDetailScreen> {
     super.dispose();
   }
 
-  String _matchCity(String raw, List<String> list) {
-    if (list.isEmpty) return '';
-    if (raw.isEmpty) return list.first;
-    final lo = raw.toLowerCase();
-    for (final c in list) {
-      if (c.toLowerCase() == lo || lo.contains(c.toLowerCase())) return c;
+  /// Türkçe karakterleri ASCII'ye indirger (karşılaştırma için).
+  /// ÖNEMLİ: 'İ' toLowerCase'den önce 'i'ye çevrilmeli; aksi hâlde
+  /// Dart 'i\u0307' (iki char) üretir ve 'i' ile eşleşmez.
+  static String _toAscii(String s) => s
+      .replaceAll('İ', 'i')
+      .replaceAll('I', 'i')
+      .toLowerCase()
+      .replaceAll('ı', 'i')
+      .replaceAll('ğ', 'g')
+      .replaceAll('ü', 'u')
+      .replaceAll('ş', 's')
+      .replaceAll('ö', 'o')
+      .replaceAll('ç', 'c')
+      .replaceAll('â', 'a')
+      .replaceAll('î', 'i')
+      .replaceAll('û', 'u');
+
+  /// Listeden en iyi eşleşmeyi bulur (Türkçe-normalize edilmiş karşılaştırma).
+  /// Eşleşme bulunamazsa '' döner — asla list.first'e düşmez.
+  String _matchFromList(String raw, List<String> list) {
+    if (list.isEmpty || raw.isEmpty) return '';
+    final rawA = _toAscii(raw);
+    // 1. Tam eşleşme
+    for (final item in list) {
+      if (_toAscii(item) == rawA) return item;
     }
-    return list.first;
+    // 2. İçerme eşleşmesi
+    for (final item in list) {
+      final itemA = _toAscii(item);
+      if (rawA.contains(itemA) || itemA.contains(rawA)) return item;
+    }
+    return ''; // Kullanıcı manuel seçer
   }
+
+  String _matchCity(String raw, List<String> list) =>
+      _matchFromList(raw, list);
 
   void _onCityChanged(String? city) {
     if (city == null) return;
@@ -324,6 +364,14 @@ class _AddressDetailScreenState extends State<AddressDetailScreen> {
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    // İl seçilmeli
+    if (_city.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Lütfen il seçiniz'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
     // Okul: üniversite seçilmeli
     if (_title == 'Okul' && _university.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -403,8 +451,10 @@ class _AddressDetailScreenState extends State<AddressDetailScreen> {
           // ── İl ─────────────────────────────────────────────────
           _label('İl *'),
           _dropdown(
-            value: cities.contains(_city) ? _city : (cities.isNotEmpty ? cities.first : null),
-            items: cities, onChanged: _onCityChanged),
+            value: _city,
+            items: cities,
+            hint: 'İl seçiniz...',
+            onChanged: _onCityChanged),
           const SizedBox(height: 14),
 
           // ── İlçe ───────────────────────────────────────────────
@@ -549,17 +599,20 @@ class _AddressDetailScreenState extends State<AddressDetailScreen> {
         fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.grey)));
 
   Widget _dropdown({String? value, required List<String> items,
-      required Function(String?) onChanged}) {
-    final safe = (value != null && items.contains(value))
-        ? value : (items.isNotEmpty ? items.first : null);
-    if (safe == null) return const SizedBox.shrink();
+      required Function(String?) onChanged, String hint = 'Seçiniz...'}) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    // Boş veya listede olmayan değer → null göster (hint görünür)
+    final effective = (value != null && value.isNotEmpty && items.contains(value))
+        ? value : null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey.shade300)),
       child: DropdownButtonHideUnderline(child: DropdownButton<String>(
-        value: safe, isExpanded: true,
+        value: effective, isExpanded: true,
+        hint: Text(hint,
+            style: const TextStyle(fontSize: 14, color: Colors.grey)),
         items: items.map((i) => DropdownMenuItem(
             value: i, child: Text(i, style: const TextStyle(fontSize: 14)))).toList(),
         onChanged: onChanged,

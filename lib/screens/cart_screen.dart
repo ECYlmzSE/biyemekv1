@@ -125,7 +125,7 @@ class _CartScreenState extends State<CartScreen> {
           Text(addr.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           Text(addr.displayAddress, style: TextStyle(color: AppTheme.grey, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
         ])),
-        TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddressScreen())), child: const Text('Değiştir', style: TextStyle(color: AppTheme.primaryGreen))),
+        // Sipariş sırasında adres değiştirme devre dışı
       ]),
     );
   }
@@ -267,10 +267,22 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(width: 8),
           ElevatedButton(
             onPressed: () {
-              final err = context.read<CartProvider>().applyPromoCode(_promoCtrl.text);
+              final code = _promoCtrl.text.trim().toUpperCase();
+              final auth = context.read<AuthProvider>();
+              // Daha önce kullanıldı mı?
+              if (auth.isPromoCodeUsed(code)) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Bu promosyon kodu daha önce kullanılmış'),
+                  backgroundColor: AppTheme.red,
+                ));
+                return;
+              }
+              final pastOrderCount = context.read<OrderProvider>().orders.length;
+              final err = context.read<CartProvider>().applyPromoCode(code, pastOrderCount: pastOrderCount);
               if (err != null) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), backgroundColor: AppTheme.red));
               } else {
+                auth.markPromoCodeUsed(code);
                 _promoCtrl.clear();
                 setState(() => _showPromo = false);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Promosyon kodu uygulandı! 🎉'), backgroundColor: AppTheme.primaryGreen));
@@ -473,10 +485,12 @@ class _CartScreenState extends State<CartScreen> {
       final ok = await auth.deductBalance(total);
       if (!ok) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('BYM bakiyeniz yetersiz.'),
-            backgroundColor: AppTheme.red,
-          ));
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(const SnackBar(
+              content: Text('BYM bakiyeniz yetersiz.'),
+              backgroundColor: AppTheme.red,
+            ));
         }
         return;
       }
@@ -516,8 +530,11 @@ class _CartScreenState extends State<CartScreen> {
     // Sipariş ID'yi al
     final orderId = orderProvider.orders.isNotEmpty ? orderProvider.orders.first.id : null;
     if (orderId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sipariş oluşturulurken hata oluştu'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(
+            content: Text('Sipariş oluşturulurken hata oluştu'),
+            backgroundColor: Colors.red));
       return;
     }
 
@@ -824,7 +841,19 @@ class _CardPaymentSheetState extends State<_CardPaymentSheet> {
                 suffixIconConstraints: const BoxConstraints(minWidth: 64, minHeight: 40),
               ),
               onChanged: (_) => setState(() {}),
-              validator: (v) => (v ?? '').replaceAll(' ', '').length != 16 ? 'Kart numarası 16 haneli olmalıdır' : null,
+              validator: (v) {
+                final n = (v ?? '').replaceAll(' ', '');
+                if (n.length != 16) return 'Kart numarası 16 haneli olmalıdır';
+                // Luhn algoritması
+                int sum = 0;
+                for (int i = 0; i < n.length; i++) {
+                  int d = int.tryParse(n[n.length - 1 - i]) ?? 0;
+                  if (i.isOdd) { d *= 2; if (d > 9) d -= 9; }
+                  sum += d;
+                }
+                if (sum % 10 != 0) return 'Geçersiz kart numarası';
+                return null;
+              },
             ),
             const SizedBox(height: 14),
             TextFormField(
@@ -844,7 +873,11 @@ class _CardPaymentSheetState extends State<_CardPaymentSheet> {
                   final p = (v ?? '').split('/');
                   if (p.length != 2 || p[0].length != 2 || p[1].length != 2) return 'AA/YY';
                   final m = int.tryParse(p[0]) ?? 0;
+                  final y = int.tryParse(p[1]) ?? 0;
                   if (m < 1 || m > 12) return 'Geçersiz ay';
+                  final now = DateTime.now();
+                  final expiry = DateTime(2000 + y, m + 1);
+                  if (expiry.isBefore(DateTime(now.year, now.month))) return 'Kartın süresi dolmuş';
                   return null;
                 },
               )),

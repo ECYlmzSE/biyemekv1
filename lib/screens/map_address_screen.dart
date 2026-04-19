@@ -96,7 +96,7 @@ class _State extends State<MapAddressScreen> {
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?lat=${ll.latitude}&lon=${ll.longitude}&format=json&accept-language=tr');
+        '?lat=${ll.latitude}&lon=${ll.longitude}&format=json&accept-language=tr&addressdetails=1&zoom=16');
       final res = await http.get(uri,
           headers: {'User-Agent': 'BiYemek/1.0 (contact@biyemek.com)'})
           .timeout(const Duration(seconds: 6));
@@ -106,7 +106,7 @@ class _State extends State<MapAddressScreen> {
       final display = j['display_name'] as String? ?? 'Adres alınamadı';
       setState(() {
         _preview   = display;
-        _geo       = _parseNominatim(addr);
+        _geo       = _parseNominatim(addr, displayName: display);
         _geocoding = false;
       });
       return;
@@ -132,23 +132,121 @@ class _State extends State<MapAddressScreen> {
     return {'city':city,'district':dist,'neighborhood':neigh,'street':street};
   }
 
-  Map<String,String> _parseNominatim(Map<String,dynamic> a) {
-    final city = a['province'] as String? ??
-                 a['state']    as String? ??
-                 a['city']     as String? ?? '';
-    final dist = a['county']   as String? ??
-                 a['district'] as String? ??
-                 a['town']     as String? ?? '';
-    final neigh = a['suburb']     as String? ??
-                  a['neighbourhood'] as String? ??
-                  a['quarter']   as String? ?? '';
-    final street = a['road'] as String? ?? '';
-    // Türkiye'de province genellikle "Ankara Province" - temizle
+  // Yaygın ASCII → Türkçe karakter düzeltme sözlüğü (tam kelime eşleşmesi)
+  static const _trWords = {
+    // Aylar
+    'mayis':'Mayıs','agustos':'Ağustos','eylul':'Eylül',
+    'aralik':'Aralık','subat':'Şubat','kasim':'Kasım',
+    // Ünlü kişi/yer isimleri
+    'ataturk':'Atatürk','inonu':'İnönü','ismet':'İsmet',
+    'istasyon':'İstasyon','izmit':'İzmit','izmir':'İzmir',
+    'iskender':'İskender','kazim':'Kazım',
+    // Yaygın adres kelimeleri
+    'sehit':'Şehit','sehitler':'Şehitler','sehitlik':'Şehitlik',
+    'kucuk':'Küçük','buyuk':'Büyük',
+    'bahce':'Bahçe','bahcesi':'Bahçesi','bahcelik':'Bahçelik',
+    'gol':'Göl','golbasi':'Gölbaşı',
+    'dag':'Dağ','dagi':'Dağı',
+    'cinar':'Çınar','cinarlı':'Çınarlı',
+    'celik':'Çelik','cayonu':'Çayönü','cay':'Çay',
+    'sahin':'Şahin','sahinkaya':'Şahinkaya',
+    'gumus':'Gümüş','gumushane':'Gümüşhane',
+    'koy':'Köy','koyu':'Köyü','koprubasi':'Köprübaşı',
+    'yuzuncu':'Yüzüncü','uc':'Üç',
+    'ozgur':'Özgür','ozgurluk':'Özgürlük',
+    'golcuk':'Gölcük','gokce':'Gökçe',
+    'koruyolu':'Koruyolu',
+    '19mayis':'19 Mayıs',
+  };
+
+  /// Tek bir kelimeyi sözlükle düzeltir (büyük/küçük harf agnostik).
+  String _fixWord(String w) {
+    final lower = w.toLowerCase();
+    return _trWords[lower] ?? w;
+  }
+
+  /// Cümledeki her kelimeyi düzeltir + suffix'leri temizler.
+  String _fixTurkish(String s) {
+    if (s.isEmpty) return s;
+    final cleaned = s
+        .replaceAll(' Province', '').replaceAll(' İli', '')
+        .replaceAll(' Ilçesi', '').replaceAll(' İlçesi', '')
+        .replaceAll(' Mahallesi', '').replaceAll(' Mahalle', '')
+        .replaceAll(' Köyü', '').replaceAll(' Koyü', '').trim();
+    return cleaned.split(' ').map(_fixWord).join(' ');
+  }
+
+  /// display_name comma parçalarından anlamsız olanları filtreler.
+  bool _isSkippablePart(String p) {
+    final l = p.trim().toLowerCase();
+    // Posta kodu (sayısal), ülke adı, boş
+    if (l.isEmpty) return true;
+    if (RegExp(r'^\d+$').hasMatch(l)) return true;
+    if (l == 'türkiye' || l == 'turkey' || l == 'turkiye') return true;
+    return false;
+  }
+
+  String _cleanSuffix(String s) => s
+      .replaceAll(' Mahallesi', '').replaceAll(' Mahalle', '')
+      .replaceAll(' Mah.', '').replaceAll(' Mah', '')
+      .replaceAll(' İlçesi', '').replaceAll(' Ilçesi', '')
+      .replaceAll(' Province', '').replaceAll(' İli', '')
+      .replaceAll(' Köyü', '').trim();
+
+  /// Nominatim'in display_name'ini birincil kaynak olarak kullanır.
+  /// Format: "Mahalle, İlçe, İl, [Posta Kodu,] Türkiye"
+  /// address alanları sadece display_name eksikse devreye girer.
+  Map<String,String> _parseNominatim(Map<String,dynamic> a, {String displayName = ''}) {
+    String s(String k) => (a[k] as String? ?? '').trim();
+
+    // ── Şehir ────────────────────────────────────────────────────
+    final city = s('province').isNotEmpty ? s('province')
+               : s('state').isNotEmpty    ? s('state')
+               : s('city');
+
+    // ── Mahalle (en spesifik alan önce) ──────────────────────────
+    final neigh = s('neighbourhood').isNotEmpty ? s('neighbourhood')
+                : s('suburb').isNotEmpty        ? s('suburb')
+                : s('quarter');
+
+    // ── İlçe: city_district ve municipality Türkiye'de daha güvenilir
+    //    county son seçenek — ama mahalle adıyla aynıysa kullanma
+    String dist = s('city_district').isNotEmpty ? s('city_district')
+                : s('municipality').isNotEmpty  ? s('municipality')
+                : '';
+
+    if (dist.isEmpty) {
+      final county = s('county').isNotEmpty ? s('county')
+                   : s('district').isNotEmpty ? s('district')
+                   : s('town');
+      // county mahalle adıyla aynıysa ya da mahalle gibi görünüyorsa kullanma
+      final sameAsNeigh = county.toLowerCase() == neigh.toLowerCase();
+      final looksMahalle = county.toLowerCase().contains('mahalle');
+      if (!sameAsNeigh && !looksMahalle) dist = county;
+    }
+
+    // ── Mahalle display_name'den geliyor olabilir (daha iyi karakter)
+    // display_name → "Mahalle, İlçe, İl, Türkiye" formatında
+    if (displayName.isNotEmpty && neigh.isEmpty) {
+      final parts = displayName.split(',')
+          .map((p) => p.trim())
+          .where((p) => !_isSkippablePart(p))
+          .toList();
+      if (parts.isNotEmpty) {
+        final first = _cleanSuffix(parts[0]);
+        if (first.isNotEmpty) {
+          // Sadece mahalle için kullan, ilçe/şehir zaten address field'dan geliyor
+        }
+      }
+    }
+
+    final street = s('road');
+
     return {
-      'city'        : city.replaceAll(' Province','').replaceAll(' İli',''),
-      'district'    : dist,
-      'neighborhood': neigh,
-      'street'      : street,
+      'city'        : _fixTurkish(city),
+      'district'    : _fixTurkish(dist),
+      'neighborhood': _fixTurkish(neigh),
+      'street'      : _fixTurkish(street),
     };
   }
 
@@ -212,6 +310,14 @@ class _State extends State<MapAddressScreen> {
     });
   }
 
+  /// Türkçe karşılaştırma için normalize eder.
+  /// 'İ' toLowerCase'den ÖNCE 'i'ye çevrilmeli (Dart U+0130 → 'i\u0307' üretir).
+  static String _norm(String s) => s
+      .replaceAll('İ', 'i').replaceAll('I', 'i')
+      .toLowerCase()
+      .replaceAll('ı', 'i').replaceAll('ğ', 'g').replaceAll('ü', 'u')
+      .replaceAll('ş', 's').replaceAll('ö', 'o').replaceAll('ç', 'c');
+
   // ── Devam ───────────────────────────────────────────────────
   void _confirm() {
     if (_geocoding || _locating) {
@@ -222,14 +328,15 @@ class _State extends State<MapAddressScreen> {
     FocusScope.of(context).unfocus();
     _debounce?.cancel();
 
-    // TurkeyGeoData'daki şehir ismiyle eşleştir
+    // TurkeyGeoData'daki şehir ismiyle normalize eşleştir
     final cities = TurkeyGeoData.allCities;
     final rawCity = _geo['city'] ?? '';
     String matchedCity = rawCity;
     if (rawCity.isNotEmpty) {
-      final lo = rawCity.toLowerCase();
+      final rn = _norm(rawCity);
       for (final c in cities) {
-        if (c.toLowerCase() == lo || lo.contains(c.toLowerCase())) {
+        final cn = _norm(c);
+        if (cn == rn || rn.contains(cn) || cn.contains(rn)) {
           matchedCity = c; break;
         }
       }

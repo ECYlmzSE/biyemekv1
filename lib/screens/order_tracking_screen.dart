@@ -44,7 +44,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           appBar: AppBar(
             title: Text('Sipariş #${order.id.split('-').last}'),
             actions: [
-              if (order.status == OrderStatus.confirmed || order.status == OrderStatus.pending)
+              if (order.status == OrderStatus.confirmed ||
+                  order.status == OrderStatus.pending ||
+                  order.status == OrderStatus.preparing)
                 TextButton(
                   onPressed: () => _confirmCancel(ctx, prov, order.id),
                   child: const Text('İptal Et', style: TextStyle(color: AppTheme.red)),
