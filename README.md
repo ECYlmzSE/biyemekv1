@@ -125,4 +125,6 @@ lib/
 ├── theme/           # Uygulama teması
 └── widgets/         # Paylaşılan widget'lar
 ```
+## Contributors
+- Berra Beytar
 
