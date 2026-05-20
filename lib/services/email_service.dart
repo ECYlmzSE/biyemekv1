@@ -12,10 +12,13 @@ import 'package:http/http.dart' as http;
 /// 4. Aşağıdaki sabitleri doldur
 class EmailService {
   // ── Buraya kendi EmailJS bilgilerini gir ──────────────────────
-  static const _publicKey   = 'pM2gUZGExkXiVNIk_';
-  static const _serviceId   = 'service_oeftn79';
-  static const _orderTemplateId      = 'template_7kckv4i';
-  static const _deliveryTemplateId   = 'template_hvar76p';
+  // emailjs.com → Account → API Keys → Public Key
+  static const _publicKey   = 'YOUR_EMAILJS_PUBLIC_KEY';
+  // emailjs.com → Email Services → Service ID
+  static const _serviceId   = 'YOUR_EMAILJS_SERVICE_ID';
+  // emailjs.com → Email Templates → Template ID
+  static const _orderTemplateId      = 'YOUR_ORDER_TEMPLATE_ID';
+  static const _deliveryTemplateId   = 'YOUR_DELIVERY_TEMPLATE_ID';
   // ─────────────────────────────────────────────────────────────
 
   static const _apiUrl = 'https://api.emailjs.com/api/v1.0/email/send';

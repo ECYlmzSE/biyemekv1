@@ -56,7 +56,7 @@ class OsmRestaurant {
 }
 
 class OverpassService {
-  static const _endpoint = 'https://overpass-api.de/api/interpreter';
+  static const _endpoint = 'https://overpass.kumi.systems/api/interpreter';
 
   /// Fetches food venues near [lat]/[lng] within [radiusMeters].
   /// Includes restaurants, cafes, fast food, bakeries.
@@ -66,7 +66,7 @@ class OverpassService {
     int radiusMeters = 5000,
   }) async {
     final query = '''
-[out:json][timeout:30];
+[out:json][timeout:25];
 (
   node(around:$radiusMeters,$lat,$lng)[amenity~"restaurant|cafe|fast_food"][name];
   way(around:$radiusMeters,$lat,$lng)[amenity~"restaurant|cafe|fast_food"][name];
@@ -77,13 +77,17 @@ out body center;
     http.Response? response;
     for (int attempt = 1; attempt <= 3; attempt++) {
       try {
+        debugPrint('Overpass deneme $attempt/3...');
         response = await http
             .post(
               Uri.parse(_endpoint),
-              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'BiYemekApp/1.0 (Flutter; Android)',
+              },
               body: 'data=${Uri.encodeComponent(query)}',
             )
-            .timeout(const Duration(seconds: 35));
+            .timeout(const Duration(seconds: 30));
         if (response.statusCode == 200) break;
         debugPrint('Overpass HTTP ${response.statusCode} (deneme $attempt/3)');
         if (attempt < 3) await Future.delayed(Duration(seconds: attempt * 2));
