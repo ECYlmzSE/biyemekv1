@@ -126,14 +126,3 @@ lib/
 └── widgets/         # Paylaşılan widget'lar
 ```
 
----
-
-## 📸 Ekran Görüntüleri
-
-> *(yakında eklenecek)*
-
----
-
-## 📄 Lisans
-
-MIT License — dilediğiniz gibi kullanabilirsiniz.
